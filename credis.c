@@ -270,7 +270,7 @@ static int cr_receivedata(int fd, unsigned int msecs, char *buf, int size)
   rc = select(fd+1, &fds, NULL, NULL, &tv);
 
   if (rc > 0)
-    return recv(fd, buf, size, 0);
+    return read(fd, buf, size);
   else if (rc == 0)
     return -2;
   else
@@ -300,7 +300,7 @@ static int cr_senddata(int fd, unsigned int msecs, char *buf, int size)
     rc = select(fd+1, NULL, &fds, NULL, &tv);
 
     if (rc > 0) {
-      rc = send(fd, buf+sent, size-sent, 0);
+      rc = write(fd, buf+sent, size-sent);
       if (rc < 0)
         return -1;
       sent += rc;
@@ -530,6 +530,71 @@ static int cr_sendandreceive(REDIS rhnd, char recvtype)
   rc = cr_senddata(rhnd->fd, rhnd->timeout, rhnd->buf.data, rhnd->buf.len);
 
   if (rc != rhnd->buf.len) {
+    if (rc < 0)
+      return CREDIS_ERR_SEND;
+    return CREDIS_ERR_TIMEOUT;
+  }
+
+  return cr_receivereply(rhnd, recvtype);
+}
+
+/* send vector as by flier.lu */
+static int cr_sendvandreceive1(REDIS rhnd, char recvtype, const struct iovec *vector, int count)
+{
+  int i, size = 0;
+  cr_buffer *buf = &(rhnd->buf);
+  char *p = buf->data;
+        
+  for (i = 0; i < count; i++) {
+    size += vector[i].iov_len;
+  }
+        
+  if (size >= buf->size) {
+    DEBUG("truncated, get more memory and try again");
+    if (cr_moremem(buf, size - buf->size + 1))
+      return CREDIS_ERR_NOMEM;          
+  }
+  
+  for (i = 0; i < count; i++) {
+    memcpy(p, vector[i].iov_base, vector[i].iov_len);
+    p += vector[i].iov_len;
+  }       
+  buf->len = size;
+        
+  return cr_sendandreceive(rhnd, recvtype);
+}
+
+/* send vector alternative 2, one memcpy() less */
+static int cr_sendvandreceive2(REDIS rhnd, char recvtype, const struct iovec *vector, int count)
+{
+  int rc, i;
+
+  for (i = 0; i < count; i++) {
+    rc = cr_senddata(rhnd->fd, rhnd->timeout, vector[i].iov_base, vector[i].iov_len);
+
+    if (rc != vector[i].iov_len) {
+      if (rc < 0)
+        return CREDIS_ERR_SEND;
+      return CREDIS_ERR_TIMEOUT;
+    }
+  }
+
+  return cr_receivereply(rhnd, recvtype);
+}
+
+/* send vector alternative 3, using writev() directly, but how to handle if writev() is unable 
+ * to write all data? is alternative 2 simpler? */
+static int cr_sendvandreceive3(REDIS rhnd, char recvtype, const struct iovec *vector, int count)
+{
+  int rc, i, size = 0;
+        
+  for (i = 0; i < count; i++)
+    size += vector[i].iov_len;
+
+  /* TODO add some select() magic for timeout and retrying to write more data */
+  rc = writev(rhnd->fd, vector, count);
+
+  if (rc != size) {
     if (rc < 0)
       return CREDIS_ERR_SEND;
     return CREDIS_ERR_TIMEOUT;
