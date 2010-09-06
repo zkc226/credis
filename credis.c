@@ -199,7 +199,7 @@ static int cr_morebulk(cr_multibulk *mb, int size)
  * Returns:
  *   0  on success
  *  <0  on error, i.e. more memory not available */
-static int cr_splitstrtromultibulk(REDIS rhnd, char *str, const char token)
+static int cr_splitstrtomultibulk(REDIS rhnd, char *str, const char token)
 {
   int i = 0;
 
@@ -972,15 +972,23 @@ int credis_type(REDIS rhnd, const char *key)
 
 int credis_keys(REDIS rhnd, const char *pattern, char ***keyv)
 {
-  int rc = cr_sendfandreceive(rhnd, CR_BULK, "KEYS %s\r\n", pattern);
+  int rc;
+
+  /* with Redis 2.0.0 keys-command returns a multibulk instead of bulk */
+  if (rhnd->version.major >= 2) {
+    rc = cr_sendfandreceive(rhnd, CR_MULTIBULK, "KEYS %s\r\n", pattern);
+  }
+  else {
+    if ((rc = cr_sendfandreceive(rhnd, CR_BULK, "KEYS %s\r\n", pattern)) == 0) {
+      /* server returns keys as space-separated strings, use multi-bulk 
+       * storage to store keys */
+      rc = cr_splitstrtomultibulk(rhnd, rhnd->reply.bulk, ' ');
+    }
+  }
 
   if (rc == 0) {
-    /* server returns keys as space-separated strings, use multi-bulk 
-     * storage to store keys */
-    if ((rc = cr_splitstrtromultibulk(rhnd, rhnd->reply.bulk, ' ')) == 0) {
-      *keyv = rhnd->reply.multibulk.bulks;
-      rc = rhnd->reply.multibulk.len;
-    }
+    *keyv = rhnd->reply.multibulk.bulks;
+    rc = rhnd->reply.multibulk.len;
   }
 
   return rc;
