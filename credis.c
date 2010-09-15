@@ -64,6 +64,7 @@ void close(int fd) {
 #define CR_BULK '$'
 #define CR_MULTIBULK '*'
 #define CR_INT ':'
+#define CR_NONE ' '
 
 #define CR_BUFFER_SIZE 4096
 #define CR_BUFFER_WATERMARK ((CR_BUFFER_SIZE)/10+1)
@@ -114,12 +115,24 @@ typedef struct _cr_reply {
   cr_multibulk multibulk;
 } cr_reply;
 
+typedef struct _cr_message { 
+  char *pattern;
+  char *channel;
+  char *message;
+  struct _cr_message *next; 
+} cr_message;
+
 typedef struct _cr_redis {
   struct {
     int major;
     int minor;
     int patch;
   } version;
+  struct {
+    cr_message *head;
+    cr_message *tail;
+    cr_message *msg;
+  } pubsub;
   int fd;
   char *ip;
   int port;
@@ -129,6 +142,7 @@ typedef struct _cr_redis {
   int error;
 } cr_redis;
 
+static void cr_freeallmessages(REDIS rhnd);
 
 /* Returns pointer to the '\r' of the first occurence of "\r\n", or NULL
  * if not found */
@@ -450,6 +464,7 @@ static int cr_readln(REDIS rhnd, int start, char **line, int *idx)
 static int cr_receivemultibulk(REDIS rhnd, char *line) 
 {
   int bnum, blen, i, rc=0, idx;
+  char type;
 
   bnum = atoi(line);
 
@@ -463,19 +478,24 @@ static int cr_receivemultibulk(REDIS rhnd, char *line)
       return CREDIS_ERR_NOMEM;
   }
 
-  for (i = 0; bnum > 0 && (rc = cr_readln(rhnd, 0, &line, NULL)) > 0; i++, bnum--) {
-    if (*(line++) != CR_BULK)
-      return CREDIS_ERR_PROTOCOL;
-    
-    blen = atoi(line);
-    if (blen == -1)
-      rhnd->reply.multibulk.idxs[i] = -1;
-    else {
-      if ((rc = cr_readln(rhnd, blen, &line, &idx)) != blen)
-        return CREDIS_ERR_PROTOCOL;
-
-      rhnd->reply.multibulk.idxs[i] = idx;
+  for (i = 0; bnum > 0 && (rc = cr_readln(rhnd, 0, &line, &idx)) > 0; i++, bnum--) {
+    type = *(line++);
+    if (type == CR_BULK) {
+      blen = atoi(line);
+      if (blen == -1)
+        rhnd->reply.multibulk.idxs[i] = -1;
+      else {
+        if ((rc = cr_readln(rhnd, blen, &line, &idx)) != blen)
+          return CREDIS_ERR_PROTOCOL;
+        
+        rhnd->reply.multibulk.idxs[i] = idx;
+      }
     }
+    else if (type == CR_INT) {
+      rhnd->reply.multibulk.idxs[i] = idx + 1;
+    }
+    else
+      return CREDIS_ERR_PROTOCOL;
   }
   
   if (bnum != 0) {
@@ -562,6 +582,7 @@ static int cr_receivereply(REDIS rhnd, char recvtype)
 
 static void cr_delete(REDIS rhnd) 
 {
+  cr_freeallmessages(rhnd);
   if (rhnd->reply.multibulk.bulks != NULL)
     free(rhnd->reply.multibulk.bulks);
   if (rhnd->reply.multibulk.idxs != NULL)
@@ -609,7 +630,10 @@ static int cr_sendandreceive(REDIS rhnd, char recvtype)
     return CREDIS_ERR_TIMEOUT;
   }
 
-  return cr_receivereply(rhnd, recvtype);
+  if (recvtype != CR_NONE)
+    rc = cr_receivereply(rhnd, recvtype);
+
+  return rc;
 }
 
 /* Prepare message buffer for sending using a printf()-style formatting. */
@@ -1547,3 +1571,191 @@ int credis_zunionstore(REDIS rhnd, const char *destkey, int keyc, const char **k
 {
   return cr_zstore(rhnd, 0, destkey, keyc, keyv, weightv, aggregate);
 }
+
+static void cr_freemessage(cr_message *msg)
+{
+  if (msg != NULL) {
+    if (msg->message != NULL)
+      free(msg->message);
+    if (msg->channel != NULL)
+      free(msg->channel);
+    if (msg->pattern != NULL)
+      free(msg->pattern);
+    free(msg);
+  }
+}
+
+/* returns first message in FIFO and removes it from queue but
+ * does not free memory. returns NULL if the queue is empty */
+static cr_message * cr_getmessage(REDIS rhnd)
+{
+  cr_message *msg = rhnd->pubsub.head;
+
+  if (rhnd->pubsub.head != NULL) {
+    if (rhnd->pubsub.head == rhnd->pubsub.tail) {
+      rhnd->pubsub.head = NULL;
+      rhnd->pubsub.tail = NULL;
+    }
+    else
+      rhnd->pubsub.head = rhnd->pubsub.head->next;
+  }
+
+  return msg;
+}
+
+static void cr_freeallmessages(REDIS rhnd)
+{
+  cr_message *msg;
+
+  if (rhnd->pubsub.msg != NULL) {
+    cr_freemessage(rhnd->pubsub.msg);
+    rhnd->pubsub.msg = NULL;
+  }
+
+  while ((msg = cr_getmessage(rhnd)) != NULL)
+    cr_freemessage(rhnd->pubsub.msg);
+}
+
+/* allocates and adds new message last in FIFO. if successful a 
+ * pointer to newly created message struct is returned else NULL 
+ * is returned. */
+static cr_message * cr_storemessage(REDIS rhnd, char *pattern, char *channel, char *message)
+{
+  cr_message *msg;
+
+  if ((msg = calloc(sizeof(cr_message), 1)) == NULL ||
+      (pattern != NULL && (msg->pattern = strdup(pattern)) == NULL) ||
+      (msg->channel = strdup(channel)) == NULL ||
+      (msg->message = strdup(message)) == NULL) {
+    DEBUG("out of memory\n");
+    cr_freemessage(msg);
+    return NULL;
+  }
+
+  if (rhnd->pubsub.tail != NULL)
+    rhnd->pubsub.tail->next = msg;
+
+  rhnd->pubsub.tail = msg;
+
+  if (rhnd->pubsub.head == NULL)
+    rhnd->pubsub.head = msg;
+  
+  return msg;
+}
+
+static int cr_parsepubsubmessage(REDIS rhnd, char **pattern, char **channel, char **message)
+{
+  if (rhnd->reply.multibulk.len >= 4 && 
+      !strcmp("pmessage", rhnd->reply.multibulk.bulks[0])) {
+    *pattern = rhnd->reply.multibulk.bulks[1];
+    *channel = rhnd->reply.multibulk.bulks[2];
+    *message = rhnd->reply.multibulk.bulks[3];
+  }
+  else if (rhnd->reply.multibulk.len >= 3 && 
+           !strcmp("message", rhnd->reply.multibulk.bulks[0])) {
+    *pattern = NULL;
+    *channel = rhnd->reply.multibulk.bulks[1];
+    *message = rhnd->reply.multibulk.bulks[2];
+  }
+  else
+    return CREDIS_ERR_PROTOCOL;
+
+  return 0;
+}
+
+/* wait for a specific pub/sub message, for instance the reply to an
+ * subscription request, and store (p)messages received during wait to
+ * message queue. returns number of channels/patterns subscribed to. */
+static int cr_sendandwaitforpubsub(REDIS rhnd, const char *command, const char *data)
+{
+  cr_buffer *buf = &(rhnd->buf);
+  char *pattern, *channel, *message;
+  int rc;
+
+  buf->len = 0;
+  
+  if (data != NULL)
+    rc = cr_appendstrf(buf, "%s %s\r\n", command, data);
+  else
+    rc = cr_appendstrf(buf, "%s\r\n", command);
+
+  /* send without receiving reply */
+  if (rc == 0)
+    rc = cr_sendandreceive(rhnd, CR_NONE);
+
+  /* wait for pushed messages */
+  /* TODO introduce a timeout */ 
+  while (rc == 0) {
+    if ((rc = cr_receivereply(rhnd, CR_MULTIBULK)) != 0)
+      return rc;
+
+    if (rhnd->reply.multibulk.len >= 3 && 
+        !strcasecmp(command, rhnd->reply.multibulk.bulks[0]) &&
+        !strcasecmp(data, rhnd->reply.multibulk.bulks[1])) {
+      return atoi(rhnd->reply.multibulk.bulks[2]);
+    }
+    else if (cr_parsepubsubmessage(rhnd, &pattern, &channel, &message) == 0) {
+      if (cr_storemessage(rhnd, pattern, channel, message) == NULL)
+        return CREDIS_ERR_NOMEM;
+    }
+    else
+      ; /* TODO out of order pub/sub message, return error or silently ignore? */
+  }
+
+  return rc;
+}
+
+int credis_subscribe(REDIS rhnd, const char *channel)
+{
+  return cr_sendandwaitforpubsub(rhnd, "SUBSCRIBE", channel);
+}
+
+int credis_unsubscribe(REDIS rhnd, const char *channel)
+{
+  return cr_sendandwaitforpubsub(rhnd, "UNSUBSCRIBE", channel);
+}
+
+int credis_psubscribe(REDIS rhnd, const char *pattern)
+{
+  return cr_sendandwaitforpubsub(rhnd, "PSUBSCRIBE", pattern);
+}
+
+int credis_punsubscribe(REDIS rhnd, const char *pattern)
+{
+  return cr_sendandwaitforpubsub(rhnd, "PUNSUBSCRIBE", pattern);
+}
+
+int credis_publish(REDIS rhnd, const char *channel, const char *message)
+{
+  int rc = cr_sendfandreceive(rhnd, CR_INT, "PUBLISH %s %zu\r\n%s\r\n", 
+                              channel, strlen(message), message);
+
+  if (rc == 0)
+    rc = rhnd->reply.integer;
+
+  return rc;                            
+}
+
+int credis_listen(REDIS rhnd, char **pattern, char **channel, char **message)
+{
+  int rc;
+
+  if (rhnd->pubsub.msg != NULL)
+    cr_freemessage(rhnd->pubsub.msg);
+
+  /* check message queue first */
+  if ((rhnd->pubsub.msg = cr_getmessage(rhnd)) != NULL) {
+    *pattern = rhnd->pubsub.msg->pattern;
+    *channel = rhnd->pubsub.msg->channel;
+    *message = rhnd->pubsub.msg->message;
+    return 0;
+  }
+
+  /* wait for message */
+  if ((rc = cr_receivereply(rhnd, CR_MULTIBULK)) == 0)
+    rc = cr_parsepubsubmessage(rhnd, pattern, channel, message);
+
+  return rc;
+}
+
+

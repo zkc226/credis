@@ -85,6 +85,7 @@ typedef struct _cr_redis* REDIS;
 #define CREDIS_ERR_RECV -95
 #define CREDIS_ERR_TIMEOUT -96
 #define CREDIS_ERR_PROTOCOL -97
+#define CREDIS_ERR_PUBSUB -98
 
 #define CREDIS_TYPE_NONE 1
 #define CREDIS_TYPE_STRING 2
@@ -431,12 +432,51 @@ int credis_sort(REDIS rhnd, const char *query, char ***elementv);
 
 
 /*
- * Publish/Subscribe
+ * Publish/Subscribe 
+ *
+ * !!EXPERIMENTAL!! Expect API and implementation to change until these
+ * lines are removed.
+ *
+ * The nature of the publish/subscribe messaging paradigm differs from the 
+ * rest of Redis, the main difference being messages are pushed to subscribing 
+ * clients. Credis tries to hide some of this de-coupling in order to make life
+ * easier for application programmers. All subscribe, unsubscribe and publish 
+ * function calls will return when an acknowledgement has been received or on 
+ * error (including timeout), just as all other Credis function calls that map 
+ * to Redis commands. If a message is pushed to the client while waiting for 
+ * an acknowledgement, to for instance a new subscription, that message is 
+ * stored on an internal FIFO. When the client is ready to receive messages a 
+ * call to listen function is made and if there is a message in the FIFO it is 
+ * immediately returned else Credis waits for a message being pushed from Redis.
+ *
+ * IMPORTANT! Note that while subscribing to one or more channels (or patterns) 
+ * the client is in a publish/subscribe state in which is not allowed to perform 
+ * other commands.
  */
 
-/* TODO
- * SUBSCRIBE/UNSUBSCRIBE/PUBLISH Redis Public/Subscribe messaging paradigm implementation
- */
+/* On success the number of channels we are currently subscribed to is
+ * returned. */
+int credis_subscribe(REDIS rhnd, const char *channel);
+
+/* `channel' specifies the channel to unsubscribe from. If set to NULL
+ * all channels are unsubscribed from. On success the number of channels 
+ * we are currently subscribed to is returned. */
+int credis_unsubscribe(REDIS rhnd, const char *channel);
+
+/* On success the number of channels we are currently subscribed to is
+ * returned. */
+int credis_psubscribe(REDIS rhnd, const char *pattern);
+
+/* `pattern' specifies the channels to unsubscribe from. If set to NULL
+ * all are unsubscribed from. On success the number of channels we are 
+ * currently subscribed to is returned. */
+int credis_punsubscribe(REDIS rhnd, const char *pattern);
+
+/* On success the number of clients that received the message is returned */
+int credis_publish(REDIS rhnd, const char *channel, const char *message);
+
+/* Listen for messages from channels and/or patterns subscribed to */
+int credis_listen(REDIS rhnd, char **pattern, char **channel, char **message);
 
 
 /* 
