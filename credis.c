@@ -685,9 +685,8 @@ void credis_close(REDIS rhnd)
 
 REDIS credis_connect(const char *host, int port, int timeout)
 {
-  int fd, rc, flags, yes = 1, use_he = 0;
+  int fd, rc, flags, yes = 1;
   struct sockaddr_in sa;  
-  struct hostent *he;
   REDIS rhnd;
 
 #ifdef WIN32
@@ -724,28 +723,34 @@ REDIS credis_connect(const char *host, int port, int timeout)
   sa.sin_port = htons(port);
 
 #ifdef WIN32
+  struct hostent *he;
+
   /* TODO use getaddrinfo() instead! */
   addr = inet_addr(host);
-  if (addr == INADDR_NONE) {
+  if (addr == INADDR_NONE)
     he = gethostbyname(host);
-    use_he = 1;
-  }
-  else {
+  else
     he = gethostbyaddr((char *)&addr, sizeof(addr), AF_INET);
-    use_he = 1;
-  }
+
+  if (he == NULL)
+    goto error;
+
+  memcpy(&sa.sin_addr, he->h_addr, sizeof(struct in_addr));
 #else
+  int err;
+  struct addrinfo hints, *info;
+ 
   if (inet_aton(host, &sa.sin_addr) == 0) {
-    he = gethostbyname(host);
-    use_he = 1;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    err = getaddrinfo(host, NULL, &hints, &info);
+    if (err)
+      DEBUG("getaddrinfo error: %s\n", gai_strerror(err));
+    memcpy(&sa.sin_addr.s_addr, &(info->ai_addr->sa_data[2]), sizeof(in_addr_t));
+    freeaddrinfo(info);
   }
 #endif
-
-  if (use_he) {
-    if (he == NULL)
-      goto error;
-    memcpy(&sa.sin_addr, he->h_addr, sizeof(struct in_addr));
-  } 
 
   /* connect with user specified timeout */
 
