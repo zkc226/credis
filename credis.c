@@ -64,6 +64,7 @@ void close(int fd) {
 #define CR_BULK '$'
 #define CR_MULTIBULK '*'
 #define CR_INT ':'
+#define CR_ANY '?'
 #define CR_NONE ' '
 
 #define CR_BUFFER_SIZE 4096
@@ -109,6 +110,7 @@ typedef struct _cr_multibulk {
 } cr_multibulk;
 
 typedef struct _cr_reply {
+  char type;
   int integer;
   char *line;
   char *bulk;
@@ -560,8 +562,10 @@ static int cr_receivereply(REDIS rhnd, char recvtype)
   if (cr_readln(rhnd, 0, &line, NULL) > 0) {
     prefix = *(line++);
  
-    if (prefix != recvtype && prefix != CR_ERROR)
+    if (recvtype != CR_ANY && prefix != recvtype && prefix != CR_ERROR)
       return CREDIS_ERR_PROTOCOL;
+
+    rhnd->reply.type = prefix;
 
     switch(prefix) {
     case CR_ERROR:
@@ -1472,14 +1476,17 @@ int credis_zincrby(REDIS rhnd, const char *key, double incr_score, const char *m
   return rc;
 }
 
-/* TODO what does Redis return if member is not member of set? */
 static int cr_zrank(REDIS rhnd, int reverse, const char *key, const char *member)
 {
-  int rc = cr_sendfandreceive(rhnd, CR_BULK, "%s %s %zu\r\n%s\r\n", 
+  int rc = cr_sendfandreceive(rhnd, CR_ANY, "%s %s %zu\r\n%s\r\n", 
                               reverse==1?"ZREVRANK":"ZRANK", key, strlen(member), member);
 
-  if (rc == 0)
-    rc = atoi(rhnd->reply.bulk);
+  if (rc == 0) {
+    if (rhnd->reply.type == CR_INT)
+      rc = rhnd->reply.integer;
+    else
+      rc = -1;
+  }
 
   return rc;
 }
