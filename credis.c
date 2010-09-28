@@ -683,6 +683,31 @@ void credis_close(REDIS rhnd)
   }
 }
 
+/* Requests Redis server information and tries to fill handle with server version 
+ * information */ 
+static int cr_getredisversion(REDIS rhnd)
+{
+  /* We can receive 2 version formats: x.yz and x.y.z, where x.yz was only used prior 
+   * first 1.1.0 release(?), e.g. stable releases 1.02 and 1.2.6 */
+  /* TODO check returned error string, "-ERR operation not permitted", to detect if 
+   * server require password? */
+  if (cr_sendfandreceive(rhnd, CR_BULK, "INFO\r\n") == 0) {
+    int items = sscanf(rhnd->reply.bulk,
+                       "redis_version:%d.%d.%d\r\n",
+                       &(rhnd->version.major),
+                       &(rhnd->version.minor),
+                       &(rhnd->version.patch));
+    if (items == 2) {
+      rhnd->version.patch = rhnd->version.minor;
+      rhnd->version.minor = 0;
+    }
+    DEBUG("Connected to Redis version: %d.%d.%d\n", 
+          rhnd->version.major, rhnd->version.minor, rhnd->version.patch);
+  }
+
+  return 0;
+}
+
 REDIS credis_connect(const char *host, int port, int timeout)
 {
   int fd, rc, flags, yes = 1;
@@ -779,23 +804,8 @@ REDIS credis_connect(const char *host, int port, int timeout)
   rhnd->fd = fd;
   rhnd->timeout = timeout;
 
-  /* We can receive 2 version formats: x.yz and x.y.z, where x.yz was only used prior 
-   * first 1.1.0 release(?), e.g. stable releases 1.02 and 1.2.6 */
-  if (cr_sendfandreceive(rhnd, CR_BULK, "INFO\r\n") == 0) {
-    int items = sscanf(rhnd->reply.bulk,
-                       "redis_version:%d.%d.%d\r\n",
-                       &(rhnd->version.major),
-                       &(rhnd->version.minor),
-                       &(rhnd->version.patch));
-    if (items < 2)
-      goto error;
-    if (items == 2) {
-      rhnd->version.patch = rhnd->version.minor;
-      rhnd->version.minor = 0;
-    }
-    DEBUG("Connected to Redis version: %d.%d.%d\n", 
-          rhnd->version.major, rhnd->version.minor, rhnd->version.patch);
-  }
+  if (cr_getredisversion(rhnd) != 0)
+    goto error;
 
   return rhnd;
 
@@ -803,7 +813,6 @@ error:
   if (fd > 0)
     close(fd);
   cr_delete(rhnd);
-
   return NULL;
 }
 
@@ -846,7 +855,13 @@ int credis_ping(REDIS rhnd)
 
 int credis_auth(REDIS rhnd, const char *password)
 {
-  return cr_sendfandreceive(rhnd, CR_INLINE, "AUTH %s\r\n", password);
+  int rc = cr_sendfandreceive(rhnd, CR_INLINE, "AUTH %s\r\n", password);
+
+  /* Request Redis server version once we have been authenticated */
+  if (rc == 0)
+    return cr_getredisversion(rhnd);
+
+  return rc;
 }
 
 static int cr_multikeybulkcommand(REDIS rhnd, const char *cmd, int keyc, 
