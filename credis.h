@@ -355,8 +355,7 @@ int credis_zadd(REDIS rhnd, const char *key, double score, const char *member);
 /* returns -1 if the member was not a member of the sorted set */
 int credis_zrem(REDIS rhnd, const char *key, const char *member);
 
-/* returns -1 if the member was not a member of the sorted set, the score of the member after
- * the increment by `incr_score' is returned by `new_score' */
+/* the score of the member after the increment by `incr_score' is returned by `new_score' */
 int credis_zincrby(REDIS rhnd, const char *key, double incr_score, const char *member, double *new_score);
 
 /* returns the rank of the given member or -1 if the member was not a member of the sorted set */

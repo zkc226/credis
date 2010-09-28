@@ -897,7 +897,11 @@ static int cr_multikeystorecommand(REDIS rhnd, const char *cmd, const char *dest
   if ((rc = cr_appendstrarray(buf, keyc, keyv, 1)) != 0)
     return rc;
 
-  return cr_sendandreceive(rhnd, CR_INLINE);
+  /* integer reply and not inline as documentation specifies */
+  if ((rc = cr_sendandreceive(rhnd, CR_INT)) == 0)
+    rc = rhnd->reply.integer;
+
+  return rc;
 }
 
 int credis_mget(REDIS rhnd, int keyc, const char **keyv, char ***valv)
@@ -1040,10 +1044,21 @@ int credis_keys(REDIS rhnd, const char *pattern, char ***keyv)
 
 int credis_randomkey(REDIS rhnd, char **key)
 {
-  int rc = cr_sendfandreceive(rhnd, CR_INLINE, "RANDOMKEY\r\n");
+  int rc;
 
-  if (rc == 0 && key) 
-    *key = rhnd->reply.line;
+  /* with Redis 2.0.0 randomkey-command returns a bulk instead of inline */
+  if (rhnd->version.major >= 2) {
+    rc = cr_sendfandreceive(rhnd, CR_BULK, "RANDOMKEY\r\n");
+
+    if (rc == 0 && key) 
+      *key = rhnd->reply.bulk;
+  }
+  else {
+    rc = cr_sendfandreceive(rhnd, CR_INLINE, "RANDOMKEY\r\n");
+
+    if (rc == 0 && key) 
+      *key = rhnd->reply.line;
+  }
 
   return rc;
 }
@@ -1170,8 +1185,13 @@ int credis_lset(REDIS rhnd, const char *key, int index, const char *val)
 
 int credis_lrem(REDIS rhnd, const char *key, int count, const char *val)
 {
-  return cr_sendfandreceive(rhnd, CR_INT, "LREM %s %d %zu\r\n%s\r\n", 
-                            key, count, strlen(val), val);
+  int rc = cr_sendfandreceive(rhnd, CR_INT, "LREM %s %d %zu\r\n%s\r\n", 
+                              key, count, strlen(val), val);
+
+  if (rc == 0) 
+    rc = rhnd->reply.integer;
+
+  return rc;
 }
 
 static int cr_pop(REDIS rhnd, int left, const char *key, char **val)
@@ -1359,8 +1379,8 @@ int credis_spop(REDIS rhnd, const char *key, char **member)
 int credis_smove(REDIS rhnd, const char *sourcekey, const char *destkey, 
                  const char *member)
 {
-  int rc = cr_sendfandreceive(rhnd, CR_INT, "SMOVE %s %s %s\r\n", 
-                              sourcekey, destkey, member);
+  int rc = cr_sendfandreceive(rhnd, CR_INT, "SMOVE %s %s %zu\r\n%s\r\n",  
+                              sourcekey, destkey, strlen(member), member);
 
   if (rc == 0 && rhnd->reply.integer == 0)
     rc = -1;
