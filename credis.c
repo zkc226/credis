@@ -240,6 +240,7 @@ static int cr_splitstrtomultibulk(REDIS rhnd, char *str, const char token)
  * Returns:
  *   0  on success
  *  <0  on error, i.e. more memory not available */
+__attribute__ ((format(printf,2,3)))
 static int cr_appendstrf(cr_buffer *buf, const char *format, ...)
 {
   int rc, avail;
@@ -251,16 +252,29 @@ static int cr_appendstrf(cr_buffer *buf, const char *format, ...)
   rc = vsnprintf(buf->data + buf->len, avail, format, ap);
   va_end(ap);
 
-  if (rc < 0)
+  if (rc < 0) {
+#ifdef WIN32
+    rc = avail * 2;
+#else
     return -1;
+#endif
+  }
 
-  if (rc >= avail) {
+  while (rc >= avail) {
     if (cr_moremem(buf, rc - avail + 1))
       return CREDIS_ERR_NOMEM;
 
     va_start(ap, format);
     rc = vsnprintf(buf->data + buf->len, buf->size - buf->len, format, ap);
     va_end(ap);
+
+    if (rc < 0) {
+#ifdef WIN32
+      rc = avail * 2;
+#else
+      return -1;
+#endif
+    }
   }
   buf->len += rc;
 
@@ -652,10 +666,16 @@ static int cr_sendfandreceive(REDIS rhnd, char recvtype, const char *format, ...
   rc = vsnprintf(buf->data, buf->size, format, ap);
   va_end(ap);
 
-  if (rc < 0)
+  if (rc < 0) {
+#ifdef WIN32
+    /* handle the fact that vnsprintf() returns -1 if the buffer is too small */
+    rc = buf->size * 2;
+#else
     return -1;
+#endif
+  }
 
-  if (rc >= buf->size) {
+  while (rc >= buf->size) {
     DEBUG("truncated, get more memory and try again");
     if (cr_moremem(buf, rc - buf->size + 1))
       return CREDIS_ERR_NOMEM;
@@ -663,6 +683,14 @@ static int cr_sendfandreceive(REDIS rhnd, char recvtype, const char *format, ...
     va_start(ap, format);
     rc = vsnprintf(buf->data, buf->size, format, ap);
     va_end(ap);
+
+    if (rc < 0) {
+#ifdef WIN32
+      rc = buf->size * 2;
+#else
+      return -1;
+#endif
+    }
   }
 
   buf->len = rc;
