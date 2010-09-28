@@ -1097,8 +1097,20 @@ int credis_ttl(REDIS rhnd, const char *key)
 
 static int cr_push(REDIS rhnd, int left, const char *key, const char *val)
 {
-  return cr_sendfandreceive(rhnd, CR_INLINE, "%s %s %zu\r\n%s\r\n", 
+  int rc;
+
+  if (rhnd->version.major >= 2) {
+    rc = cr_sendfandreceive(rhnd, CR_INT, "%s %s %zu\r\n%s\r\n", 
                             left==1?"LPUSH":"RPUSH", key, strlen(val), val);
+    if (rc == 0)
+      rc = rhnd->reply.integer;
+  }
+  else {
+    rc = cr_sendfandreceive(rhnd, CR_INLINE, "%s %s %zu\r\n%s\r\n", 
+                            left==1?"LPUSH":"RPUSH", key, strlen(val), val);
+  }
+
+  return rc;
 }
 
 int credis_rpush(REDIS rhnd, const char *key, const char *val)

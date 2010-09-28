@@ -255,8 +255,12 @@ int credis_substr(REDIS rhnd, const char *key, int start, int end, char **substr
  * Commands operating on lists 
  */
 
+/* if Redis server version is 2.0 or later the number of elements inside the list 
+ * after the push operation is returned on success */
 int credis_rpush(REDIS rhnd, const char *key, const char *element);
 
+/* if Redis server version is 2.0 or later the number of elements inside the list 
+ * after the push operation is returned on success */
 int credis_lpush(REDIS rhnd, const char *key, const char *element);
 
 /* returns length of list */
