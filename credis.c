@@ -1613,7 +1613,7 @@ static int cr_zstore(REDIS rhnd, int inter, const char *destkey, int keyc, const
 
   buf->len = 0;
   
-  if ((rc = cr_appendstrf(buf, "%s %s %d ", inter?"ZINTERSTORE":"ZUNIONSTORE", destkey, keyc)) != 0)
+  if ((rc = cr_appendstrf(buf, "%s %s %d", inter?"ZINTERSTORE":"ZUNIONSTORE", destkey, keyc)) != 0)
     return rc;
   if ((rc = cr_appendstrarray(buf, keyc, keyv, 0)) != 0)
     return rc;
@@ -1624,13 +1624,13 @@ static int cr_zstore(REDIS rhnd, int inter, const char *destkey, int keyc, const
 
   switch (aggregate) {
   case SUM: 
-    rc = cr_appendstr(buf, "AGGREGATE SUM", 0);
+    rc = cr_appendstr(buf, " AGGREGATE SUM", 0);
     break;
   case MIN:
-    rc = cr_appendstr(buf, "AGGREGATE MIN", 0);
+    rc = cr_appendstr(buf, " AGGREGATE MIN", 0);
     break;
   case MAX:
-    rc = cr_appendstr(buf, "AGGREGATE MAX", 0);
+    rc = cr_appendstr(buf, " AGGREGATE MAX", 0);
     break;
   case NONE:
     ; /* avoiding compiler warning */
