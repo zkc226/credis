@@ -1,6 +1,20 @@
-CFLAGS = -g -O2 -Wall
-LDFLAGS =
+CFLAGS ?= -g -O2 -Wall
+LDFLAGS ?=
 #CPPFLAGS = -DPRINTDEBUG
+
+VER_MAJOR = 0
+VER_MINOR = 2
+VER_PATCH = 4
+VER=$(VER_MAJOR).$(VER_MINOR).$(VER_PATCH)
+
+prefix ?= /usr/local
+libdir = $(prefix)/lib
+includedir = $(prefix)/include
+DESTDIR ?=
+INSTALL ?= /bin/install -c
+MKDIR_P ?= /bin/mkdir -p
+CP ?= /bin/cp -fd
+LN ?= /bin/ln -fs
 
 # build shared lib under OS X or Linux
 OS = $(shell uname -s)
@@ -22,12 +36,19 @@ libcredis.a: credis.o
 	$(AR) -cvq $@ $^
 
 libcredis.so: credis.o
-	$(CC) $(SHAREDLIB_LINK_OPTIONS)$@ -o $@ $^
+	$(CC) $(SHAREDLIB_LINK_OPTIONS)$@.$(VER_MAJOR) -o $@.$(VER) $^
+	$(LN) $@.$(VER) $@.$(VER_MAJOR)
+	$(LN) $@.$(VER_MAJOR) $@
 
 credis.o: credis.c credis.h Makefile
 	$(CC) -c -fPIC $(CFLAGS) $(CPPFLAGS) -o $@ credis.c
 
-install:
-	@echo "Installing library (to be done)"
+install: all installdirs
+	$(INSTALL) -m644 *.h $(DESTDIR)$(includedir)
+	$(CP) *.so* *.a $(DESTDIR)$(libdir)
+
+installdirs:
+	$(MKDIR_P) $(DESTDIR)$(libdir) $(DESTDIR)$(includedir)
+
 clean:
-	rm -f *.o *~ $(TARGETS)
+	rm -f *.o *~ *.so* $(TARGETS)
