@@ -34,6 +34,9 @@
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #else 
+#ifdef __FreeBSD__
+#include <sys/types.h>
+#endif
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
