@@ -862,6 +862,12 @@ int credis_set(REDIS rhnd, const char *key, const char *val)
                             key, strlen(val), val);
 }
 
+int credis_setex(REDIS rhnd, const char *key, const char *val, int seconds)
+{
+  return cr_sendfandreceive(rhnd, CR_INLINE, "SETEX %s %d %zu\r\n%s\r\n",
+			    key, seconds, strlen(val), val);
+}
+
 int credis_get(REDIS rhnd, const char *key, char **val)
 {
   int rc = cr_sendfandreceive(rhnd, CR_BULK, "GET %s\r\n", key);

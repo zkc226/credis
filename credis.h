@@ -214,6 +214,8 @@ int credis_flushall(REDIS rhnd);
 
 int credis_set(REDIS rhnd, const char *key, const char *val);
 
+int credis_setex(REDIS rhnd, const char *key, const char *val, int seconds);
+
 /* returns -1 if the key doesn't exists */
 int credis_get(REDIS rhnd, const char *key, char **val);
 
