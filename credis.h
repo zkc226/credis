@@ -230,7 +230,6 @@ int credis_mget(REDIS rhnd, int keyc, const char **keyv, char ***valv);
 int credis_setnx(REDIS rhnd, const char *key, const char *val);
 
 /* TODO
- * SETEX key time value Set+Expire combo command
  * MSET key1 value1 key2 value2 ... keyN valueN set a multiple keys to multiple values in a single atomic operation
  * MSETNX key1 value1 key2 value2 ... keyN valueN set a multiple keys to multiple values in a single atomic operation if none of
  */
@@ -412,13 +411,22 @@ int credis_hset(REDIS rhnd, const char *key, const char *field, const char *valu
 /* returns -1 if key or field don't exist */
 int credis_hget(REDIS rhnd, const char *key, const char *field, char **value);
 
+/* returns number of field names returned in vector `fieldv'. 0 is returned if `key' 
+ * is empty or does not exist */
+int credis_hkeys(REDIS rhnd, const char *key, char ***fieldv);
+
+/* returns number of fields in the hash, or 0 if `key' does not exist */
+int credis_hlen(REDIS rhnd, const char *key);
+ 
+/* returns number of values returned in vector `valv'. `fieldc' is the number
+ * of fields stored in `fieldv'. */
+int credis_hmget(REDIS rhnd, const char *key, int fieldc, const char **fieldv, char ***valv);
+
 /* TODO
  * HMSET key field1 value1 ... fieldN valueN Set the hash fields to their respective values.
  * HINCRBY key field integer Increment the integer value of the hash at _key_ on _field_ with _integer_.
  * HEXISTS key field Test for existence of a specified field in a hash
  * HDEL key field Remove the specified field from a hash
- * HLEN key Return the number of items in a hash.
- * HKEYS key Return all the fields in a hash.
  * HVALS key Return all the values in a hash.
  * HGETALL key Return all the fields and associated values in a hash.
  */
