@@ -1561,6 +1561,29 @@ int credis_zrevrange(REDIS rhnd, const char *key, int start, int end, char ***el
   return cr_zrange(rhnd, 1, key, start, end, elementv);
 }
 
+int cr_zrangebyscore(REDIS rhnd, int reverse, const char *key, double a, double b, char ***elementv)
+{
+  int rc = cr_sendfandreceive(rhnd, CR_MULTIBULK, "%s %s %f %f\r\n",
+                              reverse==1?"ZREVRANGEBYSCORE":"ZRANGEBYSCORE", key, a, b);
+
+  if (rc == 0) {
+    *elementv = rhnd->reply.multibulk.bulks;
+    rc = rhnd->reply.multibulk.len;
+  }
+
+  return rc;
+}
+
+int credis_zrangebyscore(REDIS rhnd, const char *key, double min, double max, char ***elementv)
+{
+  return cr_zrangebyscore(rhnd, 0, key, min, max, elementv);
+}
+
+int credis_zrevrangebyscore(REDIS rhnd, const char *key, double max, double min, char ***elementv)
+{
+  return cr_zrangebyscore(rhnd, 1, key, max, min, elementv);
+}
+
 int credis_zcard(REDIS rhnd, const char *key)
 {
   int rc = cr_sendfandreceive(rhnd, CR_INT, "ZCARD %s\r\n", key);

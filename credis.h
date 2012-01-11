@@ -370,6 +370,16 @@ int credis_zrevrank(REDIS rhnd, const char *key, const char *member);
 int credis_zrange(REDIS rhnd, const char *key, int start, int end, char ***elementv);
 
 /* returns number of elements returned in vector `elementv' 
+ * TODO add support for LIMIT 
+ * TODO add support for WITHSCORES */
+int credis_zrangebyscore(REDIS rhnd, const char *key, double min, double max, char ***elementv);
+
+/* returns number of elements returned in vector `elementv' 
+ * TODO add support for LIMIT 
+ * TODO add support for WITHSCORES */
+int credis_zrevrangebyscore(REDIS rhnd, const char *key, double max, double min, char ***elementv);
+
+/* returns number of elements returned in vector `elementv' 
  * TODO add support for WITHSCORES */
 int credis_zrevrange(REDIS rhnd, const char *key, int start, int end, char ***elementv);
 
@@ -385,10 +395,6 @@ int credis_zremrangebyscore(REDIS rhnd, const char *key, double min, double max)
 
 /* returns number of elements removed or -1 if key does not exist */
 int credis_zremrangebyrank(REDIS rhnd, const char *key, int start, int end);
-
-/* TODO
- * ZRANGEBYSCORE key min max Return all the elements with score >= min and score <= max (a range query) from the sorted set
- */
 
 /* `keyc' is the number of keys stored in `keyv'. `weightv' is optional, if not 
  * NULL, `keyc' is also the number of weights stored in `weightv'. */
