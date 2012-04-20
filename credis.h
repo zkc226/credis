@@ -1,6 +1,6 @@
 /* credis.h -- a C client library for Redis, public API.
  *
- * Copyright (c) 2009-2010, Jonas Romfelt <jonas at romfelt dot se>
+ * Copyright (c) 2009-2012, Jonas Romfelt <jonas at romfelt dot se>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -129,6 +129,8 @@ typedef struct _cr_info {
   unsigned long hash_max_zipmap_value;
   long pubsub_channels;
   unsigned int pubsub_patterns;
+  long long keyspace_hits;
+  long long keyspace_misses;
   int vm_enabled;
   int role;
 } REDIS_INFO;

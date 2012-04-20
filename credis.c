@@ -1412,6 +1412,8 @@ int credis_info(REDIS rhnd, REDIS_INFO *info)
     cr_parseinfo(rhnd->reply.bulk, "hash_max_zipmap_value", "%zu", &(info->hash_max_zipmap_value));
     cr_parseinfo(rhnd->reply.bulk, "pubsub_channels", "%ld", &(info->pubsub_channels));
     cr_parseinfo(rhnd->reply.bulk, "pubsub_patterns", "%u", &(info->pubsub_patterns));
+    cr_parseinfo(rhnd->reply.bulk, "keyspace_hits", "%lld", &(info->keyspace_hits));
+    cr_parseinfo(rhnd->reply.bulk, "keyspace_misses", "%lld", &(info->keyspace_misses));
     cr_parseinfo(rhnd->reply.bulk, "vm_enabled", "%d", &(info->vm_enabled));
     cr_parseinfo(rhnd->reply.bulk, "role", "%c", &role);
 
