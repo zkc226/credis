@@ -1,7 +1,7 @@
 /* credis-test.c -- a sample test application using credis (C client library 
  * for Redis)
  *
- * Copyright (c) 2009-2010, Jonas Romfelt <jonas at romfelt dot se>
+ * Copyright (c) 2009-2012, Jonas Romfelt <jonas at romfelt dot se>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -71,6 +71,239 @@ void randomize()
 #define DUMMY_DATA "some dummy data string"
 #define LONG_DATA 50000
 
+static int tests, fails, test_failed;
+
+#define EXPECT_TRUE(expression)					\
+  test_expect_true(expression, #expression, __FILE__, __LINE__)
+
+#define EXPECT_EQ(expression, value)					\
+  test_expect_eq(expression, #expression, __FILE__, __LINE__, value)
+
+#define EXPECT_LT(expression, value)					\
+  test_expect_lt(expression, #expression, __FILE__, __LINE__, value)
+
+#define EXPECT_GT(expression, value)					\
+  test_expect_gt(expression, #expression, __FILE__, __LINE__, value)
+
+#define TEST_SECTION(name)				\
+  printf("%s -----------------------------\n", name);
+
+#define TEST_BEGIN(name)			\
+  test_begin(name)
+
+#define TEST_DONE()				\
+  test_done()
+
+#define TEST_RESULT()				\
+  test_result()
+
+void test_begin(const char *name)
+{
+  test_failed = 0;
+  printf("TEST: %s\n", name);
+}
+
+int test_done(void)
+{
+  tests++;
+
+  if (test_failed) {
+    fails++;
+    printf("\tFAILED\n");
+    
+    return -1;
+  }
+  
+  printf("\tOK\n");
+    
+  return 0;
+}
+
+//#define SHOW_POSITIVE_EXPECTS 1
+
+int test_expect_true(int result, const char *expression, const char *file, int line)
+{
+  if (!result) {
+    test_failed++;
+    printf("\tEXPECT_TRUE FAIL (%s) == FALSE, %s:%d\n", expression, file, line);
+  }
+#ifdef SHOW_POSITIVE_EXPECTS
+  else
+    printf("\tEXPECT_TRUE OK (%s) == TRUE\n", expression);
+#endif
+
+  return result;
+}  
+
+int test_expect_eq(int result, const char *expression, const char *file, int line, int value)
+{
+  if (result != value) {
+    test_failed++;
+    printf("\tEXPECT_EQ FAIL (%s = %d) != %d, %s:%d\n", expression, result, value, file, line);
+  }
+#ifdef SHOW_POSITIVE_EXPECTS
+  else
+    printf("\tEXPECT_EQ OK %s == %d\n", expression, value);
+#endif
+
+  return result;
+}  
+
+int test_expect_lt(int result, const char *expression, const char *file, int line, int value)
+{
+  if (result >= value) {
+    test_failed++;
+    printf("\tEXPECT_LT FAIL (%s = %d) >= %d, %s:%d\n", expression, result, value, file, line);
+  }
+#ifdef SHOW_POSITIVE_EXPECTS
+  else
+    printf("\tEXPECT_LT OK (%s = %d) < %d\n", expression, result, value);
+#endif
+
+  return result;
+}  
+
+int test_expect_gt(int result, const char *expression, const char *file, int line, int value)
+{
+  if (result <= value) {
+    test_failed++;
+    printf("\tEXPECT_GT FAIL (%s = %d) <= %d, %s:%d\n", expression, result, value, file, line);
+  }
+#ifdef SHOW_POSITIVE_EXPECTS
+  else
+    printf("\tEXPECT_GT OK (%s = %d) > %d\n", expression, result, value);
+#endif
+
+  return result;
+}  
+
+void test_result(void)
+{
+  printf("RESULT: %d test cases run, %d passed, %d failed\n", 
+	 tests, tests - fails, fails);
+}
+
+int test_suite2(void)
+{
+  REDIS redis;
+  REDIS_INFO info;
+  char *val, **valv, lstr[50000];
+  const char *keys[] = {"key1", "key2", "key3", "key4", "key5"};
+  const char *values[] = {"abcdefg", "hijklmn", "opqr", "stuvw", "xyz"};
+  int rc, keyc=5, i, value;
+  double score1, score2;
+
+  TEST_SECTION("redis connection");
+
+  TEST_BEGIN("connect");
+  EXPECT_TRUE((redis = credis_connect(NULL, 0, 10000)) != NULL);
+  TEST_DONE();
+
+  TEST_BEGIN("ping");
+  EXPECT_EQ(credis_ping(redis), 0);
+  TEST_DONE();
+
+  TEST_BEGIN("last save");
+  EXPECT_GT(credis_lastsave(redis), 0);
+  TEST_DONE();
+
+  TEST_BEGIN("info");
+  EXPECT_EQ(credis_info(redis, &info), 0);
+  TEST_DONE();
+
+  TEST_BEGIN("auth");
+  EXPECT_EQ(credis_auth(redis, "qwerty"), 0);
+  EXPECT_EQ(credis_auth(redis, "dvorak"), 0);
+  TEST_DONE();
+
+
+  TEST_SECTION("string values");
+
+  TEST_BEGIN("set and get");
+  EXPECT_EQ(credis_set(redis, "credis1", "value1"), 0);
+  EXPECT_EQ(credis_set(redis, "credis1", "value1"), 0);
+  EXPECT_EQ(credis_get(redis, "credis1", &val), 0);
+  EXPECT_EQ(strcmp(val, "value1"), 0);
+  TEST_DONE();
+
+  TEST_BEGIN("del");
+  EXPECT_EQ(credis_set(redis, "credis1", "value1"), 0);
+  EXPECT_EQ(credis_del(redis, "credis1"), 0);
+  EXPECT_EQ(credis_del(redis, "credis1"), -1);
+  TEST_DONE();
+
+  TEST_BEGIN("get non-existing");
+  credis_del(redis, "credis1");
+  EXPECT_EQ(credis_get(redis, "credis1", &val), -1);
+  TEST_DONE();
+
+  TEST_BEGIN("getset");
+  credis_del(redis, "credis1");
+  EXPECT_EQ(credis_getset(redis, "credis1", "newvalue1", &val), -1);
+  EXPECT_EQ(credis_set(redis, "credis1", "value1"), 0);
+  EXPECT_EQ(credis_getset(redis, "credis1", "newvalue1", &val), 0);
+  EXPECT_EQ(strcmp(val, "value1"), 0);
+  EXPECT_EQ(credis_get(redis, "credis1", &val), 0);
+  EXPECT_EQ(strcmp(val, "newvalue1"), 0);
+  TEST_DONE();
+
+  TEST_BEGIN("setnx");
+  EXPECT_EQ(credis_del(redis, "credis1"), 0);
+  EXPECT_EQ(credis_setnx(redis, "credis1", "value1"), 0);
+  EXPECT_EQ(credis_setnx(redis, "credis1", "value1"), -1);
+  TEST_DONE();
+
+  TEST_BEGIN("type");
+  EXPECT_EQ(credis_del(redis, "credis1"), 0);
+  EXPECT_EQ(credis_type(redis, "credis1"), CREDIS_TYPE_NONE);
+  EXPECT_EQ(credis_set(redis, "credis1", "value1"), 0);
+  EXPECT_EQ(credis_type(redis, "credis1"), CREDIS_TYPE_STRING);
+  TEST_DONE();
+
+  TEST_BEGIN("setex (1 second)");
+  EXPECT_EQ(credis_setex(redis, "credis1", "value1", 1), 0);
+  EXPECT_EQ(credis_type(redis, "credis1"), CREDIS_TYPE_STRING);
+  sleep(2);
+  EXPECT_EQ(credis_type(redis, "credis1"), CREDIS_TYPE_NONE);
+  TEST_DONE();
+
+  TEST_BEGIN("mget");
+  for (i = 0; i < keyc; i++)
+    credis_set(redis, keys[i], values[i]);
+  EXPECT_EQ(credis_mget(redis, keyc, keys, &valv), keyc);
+  for (i = 0; i < keyc; i++)
+    EXPECT_EQ(strcmp(values[i], valv[i]), 0);
+  TEST_DONE();
+
+  TEST_BEGIN("incr");
+  EXPECT_EQ(credis_set(redis, "credis1", "2"), 0);
+  EXPECT_EQ(credis_incr(redis, "credis1", &value), 0);
+  EXPECT_EQ(value, 3);  
+  TEST_DONE();
+
+  TEST_BEGIN("incrby");
+  EXPECT_EQ(credis_set(redis, "credis1", "30"), 0);
+  EXPECT_EQ(credis_incrby(redis, "credis1", 10, &value), 0);
+  EXPECT_EQ(value, 40);  
+  TEST_DONE();
+
+  TEST_BEGIN("decr");
+  EXPECT_EQ(credis_set(redis, "credis1", "-4"), 0);
+  EXPECT_EQ(credis_decr(redis, "credis1", &value), 0);
+  EXPECT_EQ(value, -5);  
+  TEST_DONE();
+
+  TEST_BEGIN("decrby");
+  EXPECT_EQ(credis_set(redis, "credis1", "30"), 0);
+  EXPECT_EQ(credis_decrby(redis, "credis1", 10, &value), 0);
+  EXPECT_EQ(value, 20);  
+  TEST_DONE();
+
+  TEST_RESULT();
+
+  return 0;
+}
+
 int main(int argc, char **argv) {
   REDIS redis;
   REDIS_INFO info;
@@ -78,6 +311,8 @@ int main(int argc, char **argv) {
   const char *keyv[] = {"kalle", "adam", "unknown", "bertil", "none"};
   int rc, keyc=5, i;
   double score1, score2;
+
+  // return test_suite2();
 
   redis = credis_connect(NULL, 0, 10000);
   if (redis == NULL) {
@@ -104,6 +339,10 @@ int main(int argc, char **argv) {
          "benchmark, run: `%s <num>' where <num> is the number\n"\
          "of set-commands to send.\n\n", argv[0]);
 
+
+
+
+#if 0
   printf("\n\n************* misc info ************************************ \n");
 
   rc = credis_ping(redis);
@@ -188,7 +427,6 @@ int main(int argc, char **argv) {
   for (i = 0; i < rc; i++)
     printf(" % 2d: %s\n", i, valv[i]);
 
-
   printf("\n\n************* sets ************************************ \n");
 
   rc = credis_sadd(redis, "fruits", "banana");
@@ -208,7 +446,7 @@ int main(int argc, char **argv) {
 
   rc = credis_srem(redis, "fruits", "orange");
   printf("srem returned: %d\n", rc);
-
+#endif
 
   printf("\n\n************* lists ************************************ \n");
 
@@ -273,7 +511,7 @@ int main(int argc, char **argv) {
     char str[100];
     sprintf(str, "%d%s%d", i, DUMMY_DATA, i);
     rc = credis_rpush(redis, "mylist", str);
-    if (rc != 0)
+    if (rc < 0)
       printf("rpush returned: %d\n", rc);
   }
 
@@ -309,6 +547,7 @@ int main(int argc, char **argv) {
       printf("  %02d: %s\n", i, valv[i]);
   rc = credis_lrem(redis, "cars", 1, "volvo");
 
+  return 0;
 
 
   printf("\n\n************* sorted sets ********************************** \n");
