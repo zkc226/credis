@@ -253,6 +253,10 @@ int credis_append(REDIS rhnd, const char *key, const char *val);
 
 int credis_substr(REDIS rhnd, const char *key, int start, int end, char **substr);
 
+/* is an alias for credis_substr(), the command SUBSTR was renamed to GETRANGE in Redis > 2.0
+ * but is automatically handled by credis */
+int credis_getrange(REDIS rhnd, const char *key, int start, int end, char **substr);
+
 
 /*
  * Commands operating on lists 

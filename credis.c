@@ -1042,13 +1042,24 @@ int credis_append(REDIS rhnd, const char *key, const char *val)
 
 int credis_substr(REDIS rhnd, const char *key, int start, int end, char **substr)
 {
-  int rc = cr_sendfandreceive(rhnd, CR_BULK, "SUBSTR %s %d %d\r\n", 
-                              key, start, end);
+  int rc;
+
+  if (rhnd->version.number <= CR_VERSION(2,0,0))
+    rc = cr_sendfandreceive(rhnd, CR_BULK, "SUBSTR %s %d %d\r\n", 
+			    key, start, end);
+  else
+    rc = cr_sendfandreceive(rhnd, CR_BULK, "GETRANGE %s %d %d\r\n", 
+			    key, start, end);
 
   if (rc == 0 && substr) 
     *substr = rhnd->reply.bulk;
 
   return rc;                            
+}
+
+int credis_getrange(REDIS rhnd, const char *key, int start, int end, char **substr)
+{
+  return credis_substr(rhnd, key, start, end, substr);
 }
 
 int credis_exists(REDIS rhnd, const char *key)

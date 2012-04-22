@@ -33,6 +33,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
+#include <unistd.h>
 
 #include "credis.h"
 
@@ -71,7 +72,7 @@ void randomize()
 #define DUMMY_DATA "some dummy data string"
 #define LONG_DATA 50000
 
-static int tests, fails, test_failed;
+static int test_cases, test_cases_failed, total_tests, total_fails, test_case_result;
 
 #define EXPECT_TRUE(expression)					\
   test_expect_true(expression, #expression, __FILE__, __LINE__)
@@ -85,8 +86,9 @@ static int tests, fails, test_failed;
 #define EXPECT_GT(expression, value)					\
   test_expect_gt(expression, #expression, __FILE__, __LINE__, value)
 
-#define TEST_SECTION(name)				\
-  printf("%s -----------------------------\n", name);
+#define TEST_GROUP(name)						\
+  printf("\nSECTION: %.*s\n\n",						\
+	 60, name" <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<");
 
 #define TEST_BEGIN(name)			\
   test_begin(name)
@@ -99,16 +101,15 @@ static int tests, fails, test_failed;
 
 void test_begin(const char *name)
 {
-  test_failed = 0;
-  printf("TEST: %s\n", name);
+  test_case_result = 0;
+  printf("TEST #%03d: %s\n", ++test_cases, name);
 }
 
 int test_done(void)
 {
-  tests++;
-
-  if (test_failed) {
-    fails++;
+  if (test_case_result) {
+    test_cases_failed++;
+    total_fails += test_case_result;
     printf("\tFAILED\n");
     
     return -1;
@@ -123,9 +124,10 @@ int test_done(void)
 
 int test_expect_true(int result, const char *expression, const char *file, int line)
 {
+  total_tests++;
   if (!result) {
-    test_failed++;
-    printf("\tEXPECT_TRUE FAIL (%s) == FALSE, %s:%d\n", expression, file, line);
+    test_case_result++;
+    printf("\tEXPECT_TRUE FAIL (%s) == FALSE @ %s:%d\n", expression, file, line);
   }
 #ifdef SHOW_POSITIVE_EXPECTS
   else
@@ -137,9 +139,11 @@ int test_expect_true(int result, const char *expression, const char *file, int l
 
 int test_expect_eq(int result, const char *expression, const char *file, int line, int value)
 {
+  total_tests++;
   if (result != value) {
-    test_failed++;
-    printf("\tEXPECT_EQ FAIL (%s = %d) != %d, %s:%d\n", expression, result, value, file, line);
+    test_case_result++;
+    printf("\tEXPECT_EQ FAIL (%s = %d) != %d @ %s:%d\n", 
+	   expression, result, value, file, line);
   }
 #ifdef SHOW_POSITIVE_EXPECTS
   else
@@ -151,9 +155,11 @@ int test_expect_eq(int result, const char *expression, const char *file, int lin
 
 int test_expect_lt(int result, const char *expression, const char *file, int line, int value)
 {
+  total_tests++;
   if (result >= value) {
-    test_failed++;
-    printf("\tEXPECT_LT FAIL (%s = %d) >= %d, %s:%d\n", expression, result, value, file, line);
+    test_case_result++;
+    printf("\tEXPECT_LT FAIL (%s = %d) >= %d @ %s:%d\n", 
+	   expression, result, value, file, line);
   }
 #ifdef SHOW_POSITIVE_EXPECTS
   else
@@ -165,9 +171,11 @@ int test_expect_lt(int result, const char *expression, const char *file, int lin
 
 int test_expect_gt(int result, const char *expression, const char *file, int line, int value)
 {
+  total_tests++;
   if (result <= value) {
-    test_failed++;
-    printf("\tEXPECT_GT FAIL (%s = %d) <= %d, %s:%d\n", expression, result, value, file, line);
+    test_case_result++;
+    printf("\tEXPECT_GT FAIL (%s = %d) <= %d @ %s:%d\n", 
+	   expression, result, value, file, line);
   }
 #ifdef SHOW_POSITIVE_EXPECTS
   else
@@ -179,8 +187,11 @@ int test_expect_gt(int result, const char *expression, const char *file, int lin
 
 void test_result(void)
 {
-  printf("RESULT: %d test cases run, %d passed, %d failed\n", 
-	 tests, tests - fails, fails);
+  printf("RESULT:\n\t%d test cases run, %d passed, %d failed\n",
+	 test_cases, test_cases - test_cases_failed, test_cases_failed); 
+
+  printf("\t%d tests run in total, %d passed, %d failed\n\n", 
+	 total_tests, total_tests - total_fails, total_fails);
 }
 
 int test_suite2(void)
@@ -193,7 +204,7 @@ int test_suite2(void)
   int rc, keyc=5, i, value;
   double score1, score2;
 
-  TEST_SECTION("redis connection");
+  TEST_GROUP("redis connection");
 
   TEST_BEGIN("connect");
   EXPECT_TRUE((redis = credis_connect(NULL, 0, 10000)) != NULL);
@@ -217,7 +228,7 @@ int test_suite2(void)
   TEST_DONE();
 
 
-  TEST_SECTION("string values");
+  TEST_GROUP("string values");
 
   TEST_BEGIN("set and get");
   EXPECT_EQ(credis_set(redis, "credis1", "value1"), 0);
@@ -299,6 +310,238 @@ int test_suite2(void)
   EXPECT_EQ(value, 20);  
   TEST_DONE();
 
+  TEST_BEGIN("append");
+  EXPECT_EQ(credis_set(redis, "credis1", "12345"), 0);
+  EXPECT_EQ(credis_append(redis, "credis1", "6789"), 9);
+  EXPECT_EQ(credis_get(redis, "credis1", &val), 0);
+  EXPECT_EQ(strcmp(val, "123456789"), 0);
+  EXPECT_EQ(credis_del(redis, "credis1"), 0);
+  EXPECT_EQ(credis_append(redis, "credis1", "123456789"), 9);
+  TEST_DONE();
+
+  TEST_BEGIN("substr");
+  EXPECT_EQ(credis_set(redis, "credis1", "abcdefghijklmnopqrstuvwxyz"), 0);
+  EXPECT_EQ(credis_substr(redis, "credis1", 1, 3, &val), 0);
+  EXPECT_EQ(strcmp(val, "bcd"), 0);
+  EXPECT_EQ(credis_substr(redis, "credis1", -4, -1, &val), 0);
+  EXPECT_EQ(strcmp(val, "wxyz"), 0);
+  TEST_DONE();
+
+  TEST_BEGIN("getrange");
+  EXPECT_EQ(credis_set(redis, "credis1", "abcdefghijklmnopqrstuvwxyz"), 0);
+  EXPECT_EQ(credis_getrange(redis, "credis1", 1, 5, &val), 0);
+  EXPECT_EQ(strcmp(val, "bcdef"), 0);
+  TEST_DONE();
+
+  TEST_GROUP("lists");
+
+  TEST_BEGIN("rphush");
+  credis_del(redis, "credis1");
+  EXPECT_TRUE(credis_rpush(redis, "credis1", "element1") >= 0);
+  EXPECT_TRUE(credis_rpush(redis, "credis1", "element2") >= 0);
+  TEST_DONE();
+
+  TEST_BEGIN("lphush");
+  credis_del(redis, "credis1");
+  EXPECT_TRUE(credis_rpush(redis, "credis1", "element1") >= 0);
+  EXPECT_TRUE(credis_rpush(redis, "credis1", "element2") >= 0);
+  TEST_DONE();
+
+  TEST_BEGIN("llen");
+  credis_del(redis, "credis1");
+  EXPECT_EQ(credis_llen(redis, "credis1"), 0);
+  EXPECT_TRUE(credis_rpush(redis, "credis1", "element1") >= 0);
+  EXPECT_EQ(credis_llen(redis, "credis1"), 1);
+  EXPECT_TRUE(credis_rpush(redis, "credis1", "element2") >= 0);
+  EXPECT_EQ(credis_llen(redis, "credis1"), 2);
+  EXPECT_EQ(credis_del(redis, "credis1"), 0);
+  EXPECT_EQ(credis_set(redis, "credis1", "value1"), 0);
+  EXPECT_LT(credis_llen(redis, "credis1"), 0);
+  TEST_DONE();
+
+  TEST_BEGIN("lpop");
+  credis_del(redis, "credis1");
+  EXPECT_EQ(credis_lpop(redis, "credis1", &val), -1);
+  EXPECT_TRUE(credis_rpush(redis, "credis1", "element1") >= 0);
+  EXPECT_TRUE(credis_rpush(redis, "credis1", "element2") >= 0);
+  EXPECT_EQ(credis_lpop(redis, "credis1", &val), 0);
+  EXPECT_EQ(strcmp(val, "element1"), 0);
+  TEST_DONE();
+
+  TEST_BEGIN("rpop");
+  credis_del(redis, "credis1");
+  EXPECT_EQ(credis_rpop(redis, "credis1", &val), -1);
+  EXPECT_TRUE(credis_lpush(redis, "credis1", "element1") >= 0);
+  EXPECT_TRUE(credis_lpush(redis, "credis1", "element2") >= 0);
+  EXPECT_EQ(credis_rpop(redis, "credis1", &val), 0);
+  EXPECT_EQ(strcmp(val, "element1"), 0);
+  TEST_DONE();
+
+  TEST_BEGIN("lrange");
+  credis_del(redis, "credis1");
+  for (i = 0; i < keyc; i++)
+    EXPECT_TRUE(credis_rpush(redis, "credis1", values[i]) >= 0);
+  EXPECT_EQ(credis_lrange(redis, "credis1", 0, 10, &valv), keyc);
+  for (i = 0; i < keyc; i++)
+    EXPECT_EQ(strcmp(values[i], valv[i]), 0);
+  TEST_DONE();
+
+  TEST_BEGIN("ltrim");
+  credis_del(redis, "credis1");
+  for (i = 0; i < keyc; i++)
+    EXPECT_TRUE(credis_rpush(redis, "credis1", values[i]) >= 0);
+  EXPECT_EQ(credis_ltrim(redis, "credis1", 1, 3), 0);
+  EXPECT_EQ(credis_lrange(redis, "credis1", 0, 10, &valv), 3);
+  for (i = 1; i < 3; i++)
+    EXPECT_EQ(strcmp(values[i], valv[i - 1]), 0);
+  TEST_DONE();
+
+  TEST_BEGIN("lindex");
+  credis_del(redis, "credis1");
+  EXPECT_EQ(credis_lindex(redis, "credis1", 1, &val), -1);
+  for (i = 0; i < keyc; i++)
+    EXPECT_TRUE(credis_rpush(redis, "credis1", values[i]) >= 0);
+  EXPECT_EQ(credis_lindex(redis, "credis1", keyc + 1, &val), -1);
+  EXPECT_EQ(credis_lindex(redis, "credis1", 2, &val), 0);
+  EXPECT_EQ(strcmp(values[2], val), 0);
+  TEST_DONE();
+
+  TEST_BEGIN("lset");
+  credis_del(redis, "credis1");
+  EXPECT_EQ(credis_lindex(redis, "credis1", 1, &val), -1);
+  for (i = 0; i < keyc; i++)
+    EXPECT_TRUE(credis_rpush(redis, "credis1", values[i]) >= 0);
+  EXPECT_EQ(credis_lset(redis, "credis1", 3, "newvalue"), 0);
+  EXPECT_EQ(credis_lindex(redis, "credis1", 3, &val), 0);
+  EXPECT_EQ(strcmp("newvalue", val), 0);
+  EXPECT_LT(credis_lset(redis, "credis1", keyc + 1, "newvalue"), 0);
+  TEST_DONE();
+
+  TEST_BEGIN("lrem");
+  credis_del(redis, "credis1");
+  EXPECT_EQ(credis_lindex(redis, "credis1", 1, &val), -1);
+  for (i = 0; i < keyc; i++)
+    EXPECT_TRUE(credis_rpush(redis, "credis1", values[i]) >= 0);
+  EXPECT_EQ(credis_lrem(redis, "credis1", 0, values[1]), 1);
+  EXPECT_EQ(credis_lrem(redis, "credis1", 0, values[1]), 0);
+  TEST_DONE();
+
+#if 0
+
+
+  TEST_BEGIN("");
+  EXPECT_EQ(, 0);
+  TEST_DONE();
+
+  TEST_BEGIN("");
+  EXPECT_EQ(, 0);
+  TEST_DONE();
+
+  TEST_BEGIN("");
+  EXPECT_EQ(, 0);
+  TEST_DONE();
+
+
+  rc = credis_llen(redis, "mylist");
+  printf("length of list: %d\n", rc);
+
+  rc = credis_del(redis, "mylist");
+  printf("del returned: %d\n", rc);
+
+  rc = credis_llen(redis, "mylist");
+  printf("length of list: %d\n", rc);
+
+  rc = credis_rpush(redis, "kalle", "first");
+  printf("rpush returned: %d\n", rc);
+
+  rc = credis_rpush(redis, "mylist", "first");
+  printf("rpush returned: %d\n", rc);
+
+  rc = credis_rpush(redis, "mylist", "right");
+  printf("rpush returned: %d\n", rc);
+
+  rc = credis_lpush(redis, "mylist", "left");
+  printf("lpush returned: %d\n", rc);
+
+  rc = credis_lrange(redis, "mylist", 0, 2, &valv);
+  printf("lrange (0, 2) returned: %d\n", rc);
+  for (i = 0; i < rc; i++)
+    printf(" % 2d: %s\n", i, valv[i]);
+
+  rc = credis_lrange(redis, "mylist", 0, -1, &valv);
+  printf("lrange (0, -1) returned: %d\n", rc);
+  for (i = 0; i < rc; i++)
+    printf(" % 2d: %s\n", i, valv[i]);
+
+  /* generate some test data */
+  randomize();
+  for (i = 0; i < LONG_DATA; i++)
+    lstr[i] = ' ' + getrandom('~' - ' ');
+  lstr[i-1] = 0;
+  rc = credis_lpush(redis, "mylist", lstr);
+  printf("rpush returned: %d\n", rc);
+
+  rc = credis_lrange(redis, "mylist", 0, 0, &valv);
+  printf("lrange (0, 0) returned: %d, strncmp() returend %d\n", rc, strncmp(valv[0], lstr, LONG_DATA-1));
+
+  rc = credis_llen(redis, "mylist");
+  printf("length of list: %d\n", rc);
+
+  rc = credis_lrange(redis, "not_exists", 0, -1, &valv);
+  printf("lrange (0, -1) returned: %d\n", rc);
+  for (i = 0; i < rc; i++)
+    printf(" % 2d: %s\n", i, valv[i]);
+
+  rc = credis_del(redis, "mylist");
+  printf("del returned: %d\n", rc);
+
+  rc = credis_llen(redis, "mylist");
+  printf("length of list: %d\n", rc);
+
+  printf("Adding 200 items to list\n");
+  for (i = 0; i < 200; i++) {
+    char str[100];
+    sprintf(str, "%d%s%d", i, DUMMY_DATA, i);
+    rc = credis_rpush(redis, "mylist", str);
+    if (rc < 0)
+      printf("rpush returned: %d\n", rc);
+  }
+
+  rc = credis_lrange(redis, "mylist", 0, 200, &valv);
+  printf("lrange (0, 200) returned: %d, verifying data ... ", rc);
+  for (i = 0; i < rc; i++) {
+    char str[100];
+    sprintf(str, "%d%s%d", i, DUMMY_DATA, i);
+    if (strncmp(valv[i], str, strlen(str)))
+      printf("\nreturned item (%d) data differs: '%s' != '%s'", i, valv[i], str);
+  }  
+  printf("all data verified!\n");
+
+  printf("Testing lpush and lrem\n");
+  rc = credis_lpush(redis, "cars", "volvo");
+  rc = credis_lpush(redis, "cars", "saab");
+  rc = credis_lrange(redis, "cars", 0, 200, &valv);
+  printf("lrange (0, 200) returned: %d items\n", rc);
+  for (i = 0; i < rc; i++) 
+      printf("  %02d: %s\n", i, valv[i]);
+  rc = credis_lrem(redis, "cars", 1, "volvo");
+  printf("credis_lrem() returned %d\n", rc);
+  rc = credis_lrange(redis, "cars", 0, 200, &valv);
+  printf("lrange (0, 200) returned: %d items\n", rc);
+  for (i = 0; i < rc; i++) 
+      printf("  %02d: %s\n", i, valv[i]);
+  rc = credis_lrem(redis, "cars", 1, "volvo");
+
+  printf("Testing lset\n");
+  rc = credis_lset(redis, "cars", 2, "koenigsegg");
+  printf("lrange (0, 200) returned: %d items\n", rc);
+  for (i = 0; i < rc; i++) 
+      printf("  %02d: %s\n", i, valv[i]);
+  rc = credis_lrem(redis, "cars", 1, "volvo");
+#endif
+
+
+
   TEST_RESULT();
 
   return 0;
@@ -312,7 +555,7 @@ int main(int argc, char **argv) {
   int rc, keyc=5, i;
   double score1, score2;
 
-  // return test_suite2();
+  return test_suite2();
 
   redis = credis_connect(NULL, 0, 10000);
   if (redis == NULL) {
