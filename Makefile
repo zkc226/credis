@@ -7,14 +7,14 @@ VER_MINOR = 3
 VER_PATCH = 0
 VER=$(VER_MAJOR).$(VER_MINOR).$(VER_PATCH)
 
-prefix ?= /usr/local
-libdir = $(prefix)/lib
-includedir = $(prefix)/include
-DESTDIR ?=
-INSTALL ?= /bin/install -c
-MKDIR_P ?= /bin/mkdir -p
+INSTALL ?= /usr/bin/install -c
+MKDIR ?= /bin/mkdir -p
 CP ?= /bin/cp -fd
 LN ?= /bin/ln -fs
+
+INSTALLDIR ?= /usr/local
+LIBDIR = $(INSTALLDIR)/lib
+INCLUDEDIR = $(INSTALLDIR)/include
 
 # build shared lib under OS X or Linux
 OS = $(shell uname -s)
@@ -44,11 +44,11 @@ credis.o: credis.c credis.h Makefile
 	$(CC) -c -fPIC $(CFLAGS) $(CPPFLAGS) -o $@ credis.c
 
 install: all installdirs
-	$(INSTALL) -m644 *.h $(DESTDIR)$(includedir)
-	$(CP) *.so* *.a $(DESTDIR)$(libdir)
+	$(INSTALL) -m644 *.h $(INCLUDEDIR)
+	$(INSTALL) -m755 *.so* *.a $(LIBDIR)
 
 installdirs:
-	$(MKDIR_P) $(DESTDIR)$(libdir) $(DESTDIR)$(includedir)
+	$(MKDIR) $(LIBDIR) $(INCLUDEDIR)
 
 clean:
 	rm -f *.o *~ *.so* $(TARGETS)
