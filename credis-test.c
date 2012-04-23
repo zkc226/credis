@@ -208,10 +208,26 @@ int test_suite2(void)
 
   TEST_BEGIN("connect");
   EXPECT_TRUE((redis = credis_connect(NULL, 0, 10000)) != NULL);
+  credis_close(redis);
+  TEST_DONE();
+  
+  TEST_BEGIN("quit");
+  EXPECT_TRUE((redis = credis_connect(NULL, 0, 10000)) != NULL);
+  EXPECT_EQ(credis_quit(redis), 0);
+  credis_close(redis);
+  TEST_DONE();
+  
+  TEST_BEGIN("connect and stay connected");
+  EXPECT_TRUE((redis = credis_connect(NULL, 0, 10000)) != NULL);
   TEST_DONE();
 
   TEST_BEGIN("ping");
   EXPECT_EQ(credis_ping(redis), 0);
+  TEST_DONE();
+
+  TEST_BEGIN("echo");
+  EXPECT_EQ(credis_echo(redis, "echoooo.....", &val), 0);
+  EXPECT_EQ(strcmp(val, "echoooo....."), 0);
   TEST_DONE();
 
   TEST_BEGIN("last save");
@@ -226,7 +242,6 @@ int test_suite2(void)
   EXPECT_EQ(credis_auth(redis, "qwerty"), 0);
   EXPECT_EQ(credis_auth(redis, "dvorak"), 0);
   TEST_DONE();
-
 
   TEST_GROUP("string values");
 
@@ -440,63 +455,6 @@ int test_suite2(void)
   TEST_BEGIN("");
   EXPECT_EQ(, 0);
   TEST_DONE();
-
-
-  rc = credis_llen(redis, "mylist");
-  printf("length of list: %d\n", rc);
-
-  rc = credis_del(redis, "mylist");
-  printf("del returned: %d\n", rc);
-
-  rc = credis_llen(redis, "mylist");
-  printf("length of list: %d\n", rc);
-
-  rc = credis_rpush(redis, "kalle", "first");
-  printf("rpush returned: %d\n", rc);
-
-  rc = credis_rpush(redis, "mylist", "first");
-  printf("rpush returned: %d\n", rc);
-
-  rc = credis_rpush(redis, "mylist", "right");
-  printf("rpush returned: %d\n", rc);
-
-  rc = credis_lpush(redis, "mylist", "left");
-  printf("lpush returned: %d\n", rc);
-
-  rc = credis_lrange(redis, "mylist", 0, 2, &valv);
-  printf("lrange (0, 2) returned: %d\n", rc);
-  for (i = 0; i < rc; i++)
-    printf(" % 2d: %s\n", i, valv[i]);
-
-  rc = credis_lrange(redis, "mylist", 0, -1, &valv);
-  printf("lrange (0, -1) returned: %d\n", rc);
-  for (i = 0; i < rc; i++)
-    printf(" % 2d: %s\n", i, valv[i]);
-
-  /* generate some test data */
-  randomize();
-  for (i = 0; i < LONG_DATA; i++)
-    lstr[i] = ' ' + getrandom('~' - ' ');
-  lstr[i-1] = 0;
-  rc = credis_lpush(redis, "mylist", lstr);
-  printf("rpush returned: %d\n", rc);
-
-  rc = credis_lrange(redis, "mylist", 0, 0, &valv);
-  printf("lrange (0, 0) returned: %d, strncmp() returend %d\n", rc, strncmp(valv[0], lstr, LONG_DATA-1));
-
-  rc = credis_llen(redis, "mylist");
-  printf("length of list: %d\n", rc);
-
-  rc = credis_lrange(redis, "not_exists", 0, -1, &valv);
-  printf("lrange (0, -1) returned: %d\n", rc);
-  for (i = 0; i < rc; i++)
-    printf(" % 2d: %s\n", i, valv[i]);
-
-  rc = credis_del(redis, "mylist");
-  printf("del returned: %d\n", rc);
-
-  rc = credis_llen(redis, "mylist");
-  printf("length of list: %d\n", rc);
 
   printf("Adding 200 items to list\n");
   for (i = 0; i < 200; i++) {

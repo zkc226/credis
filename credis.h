@@ -153,11 +153,13 @@ void credis_settimeout(REDIS rhnd, int timeout);
 
 void credis_close(REDIS rhnd);
 
-void credis_quit(REDIS rhnd);
+int credis_quit(REDIS rhnd);
 
 int credis_auth(REDIS rhnd, const char *password);
 
 int credis_ping(REDIS rhnd);
+
+int credis_echo(REDIS rhnd, const char *message, char **reply);
 
 /* if a function call returns error it is _possible_ that the Redis server
  * replied with an error message. It is returned by this function. */

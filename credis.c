@@ -913,6 +913,28 @@ int credis_ping(REDIS rhnd)
   return cr_sendfandreceive(rhnd, CR_INLINE, "PING\r\n");
 }
 
+int credis_echo(REDIS rhnd, const char *message, char **reply)
+{
+  int rc;
+
+  if (rhnd->version.number >= CR_VERSION(2,2,2))
+    rc = cr_sendfandreceive(rhnd, CR_BULK, "ECHO %s\r\n", 
+			    message);
+  else
+    rc = cr_sendfandreceive(rhnd, CR_BULK, "ECHO %zu\r\n%s\r\n", 
+			    strlen(message), message);
+  
+  if (rc == 0 && (*reply = rhnd->reply.bulk) == NULL)
+    return -1;
+
+  return rc;
+}
+
+int credis_quit(REDIS rhnd) 
+{
+  return cr_sendfandreceive(rhnd, CR_INLINE, "QUIT\r\n");
+}
+
 int credis_auth(REDIS rhnd, const char *password)
 {
   int rc = cr_sendfandreceive(rhnd, CR_INLINE, "AUTH %s\r\n", password);
